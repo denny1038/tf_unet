@@ -20,6 +20,7 @@ from __future__ import print_function, division, absolute_import, unicode_litera
 import glob
 import numpy as np
 from PIL import Image
+from skimage import io
 
 class BaseDataProvider(object):
     """
@@ -127,6 +128,59 @@ class SimpleDataProvider(BaseDataProvider):
     def _next_data(self):
         idx = np.random.choice(self.file_count)
         return self.data[idx], self.label[idx]
+
+class GisDataProvider(BaseDataProvider):
+    def __init__(self, data_path, mask_path, a_min=None, a_max=None, \
+                    data_prefix="img", data_suffix=".TIF", \
+                    mask_prefix="mask", mask_suffix="0.TIF", 
+                    shuffle_data=True, n_class = 2):
+        super(GisDataProvider, self).__init__(a_min, a_max)
+        self.data_prefix = data_prefix
+        self.data_suffix = data_suffix
+        self.mask_prefix = mask_prefix
+        self.mask_suffix = mask_suffix
+        self.file_idx = -1
+        self.shuffle_data = shuffle_data
+        self.n_class = n_class
+        
+        self.data_files = self._find_data_files(data_path, mask_path)
+        
+        if self.shuffle_data:
+            np.random.shuffle(self.data_files)
+        
+        assert len(self.data_files) > 0, "No training files"
+        print("Number of files used: %s" % len(self.data_files))
+        
+        img = self._load_file(self.data_files[0])
+        print(self.data_files[0])
+        self.channels = 1 if len(img.shape) == 2 else img.shape[-1]
+        
+    def _find_data_files(self, data_path, mask_path):
+        all_masks = glob.glob(mask_path)
+        all_data = glob.glob(data_path)
+        return [name for name in all_masks if self.mask_suffix in name and not self.data_suffix in name]
+    
+    def _load_file(self, path):
+        return io.imread(path)
+        # return np.squeeze(cv2.imread(image_name, cv2.IMREAD_GRAYSCALE))
+
+    def _cycle_file(self):
+        self.file_idx += 1
+        if self.file_idx >= len(self.data_files):
+            self.file_idx = 0 
+            if self.shuffle_data:
+                np.random.shuffle(self.data_files)
+        
+    def _next_data(self):
+        self._cycle_file()
+        image_name = self.data_files[self.file_idx]
+        label_name = image_name.replace(self.data_suffix, self.mask_suffix) \
+                            .replace(self.data_prefix, self.mask_prefix)
+        
+        img = self._load_file(image_name)
+        label = self._load_file(label_name)
+    
+        return img,label
 
 
 class ImageDataProvider(BaseDataProvider):
