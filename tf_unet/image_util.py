@@ -130,11 +130,35 @@ class SimpleDataProvider(BaseDataProvider):
         return self.data[idx], self.label[idx]
 
 class GisDataProvider(BaseDataProvider):
+    """
+    Specific data provider for RapidEye images.
+    Assumes that the data images and label images are stored in separate folders
+    and that the labels have a different file suffix/prefix
+    e.g. 'datasets/_split_rasters/img1.TIF' and 
+            'datasets/_forest_rasters/mask10.TIF'
+
+    Usage:
+    data_provider = image_util.GisDataProvider("../datasets/_split_rasters/","../datasets/_forest_rasters/")
+        
+    :param data_path: directory to find all data images
+    :param mask_path: directory to find all label images
+    :param a_min: (optional) min value used for clipping
+    :param a_max: (optional) max value used for clipping
+    :param data_prefix: prefix pattern for the data images.
+    :param data_suffix: suffix pattern for the data images.
+    :param mask_prefix: prefix pattern for the label images.
+    :param mask_suffix: suffix pattern for the label images.
+    :param shuffle_data: if the order of the loaded file path should be randomized. Default 'True'
+    :param n_class: (optional) number of classes, default=2
+    
+    """
     def __init__(self, data_path, mask_path, a_min=None, a_max=None, \
                     data_prefix="img", data_suffix=".TIF", \
                     mask_prefix="mask", mask_suffix="0.TIF", 
                     shuffle_data=True, n_class = 2):
         super(GisDataProvider, self).__init__(a_min, a_max)
+        self.data_path = data_path
+        self.mask_path = mask_path
         self.data_prefix = data_prefix
         self.data_suffix = data_suffix
         self.mask_prefix = mask_prefix
@@ -143,7 +167,7 @@ class GisDataProvider(BaseDataProvider):
         self.shuffle_data = shuffle_data
         self.n_class = n_class
         
-        self.data_files = self._find_data_files(data_path, mask_path)
+        self.data_files = self._find_data_files()
         
         if self.shuffle_data:
             np.random.shuffle(self.data_files)
@@ -151,18 +175,18 @@ class GisDataProvider(BaseDataProvider):
         assert len(self.data_files) > 0, "No training files"
         print("Number of files used: %s" % len(self.data_files))
         
-        img = self._load_file(self.data_files[0])
-        print(self.data_files[0])
+        img = self._load_file(self.data_files[0][0])
         self.channels = 1 if len(img.shape) == 2 else img.shape[-1]
         
-    def _find_data_files(self, data_path, mask_path):
-        all_masks = glob.glob(mask_path)
-        all_data = glob.glob(data_path)
-        return [name for name in all_masks if self.mask_suffix in name and not self.data_suffix in name]
+    def _find_data_files(self):
+        all_masks = glob.glob(self.mask_path+"*"+self.mask_suffix)
+        return [(name.replace(self.mask_path, self.data_path) \
+                    .replace(self.mask_prefix, self.data_prefix) \
+                    .replace(self.mask_suffix, self.data_suffix), name) \
+                        for name in all_masks]
     
     def _load_file(self, path):
         return io.imread(path)
-        # return np.squeeze(cv2.imread(image_name, cv2.IMREAD_GRAYSCALE))
 
     def _cycle_file(self):
         self.file_idx += 1
@@ -173,14 +197,16 @@ class GisDataProvider(BaseDataProvider):
         
     def _next_data(self):
         self._cycle_file()
-        image_name = self.data_files[self.file_idx]
-        label_name = image_name.replace(self.data_suffix, self.mask_suffix) \
-                            .replace(self.data_prefix, self.mask_prefix)
+        image_name = self.data_files[self.file_idx][0]
+        label_name = self.data_files[self.file_idx][1]
         
         img = self._load_file(image_name)
         label = self._load_file(label_name)
     
         return img,label
+
+    def length(self):
+        return len(self.data_files)
 
 
 class ImageDataProvider(BaseDataProvider):
